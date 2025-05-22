@@ -22,6 +22,7 @@
 #include "stm32g4xx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "uart_utils.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -55,7 +56,7 @@
 /* USER CODE END 0 */
 
 /* External variables --------------------------------------------------------*/
-
+extern UART_HandleTypeDef huart2;
 /* USER CODE BEGIN EV */
 
 /* USER CODE END EV */
@@ -199,6 +200,35 @@ void SysTick_Handler(void)
 /* please refer to the startup file (startup_stm32g4xx.s).                    */
 /******************************************************************************/
 
-/* USER CODE BEGIN 1 */
+/**
+  * @brief This function handles USART2 global interrupt / USART2 wake-up interrupt through EXTI line 26.
+  */
+void USART2_IRQHandler(void)
+{
+  /* USER CODE BEGIN USART2_IRQn 0 */
 
+  /* USER CODE END USART2_IRQn 0 */
+  HAL_UART_IRQHandler(&huart2);
+  /* USER CODE BEGIN USART2_IRQn 1 */
+
+  /* USER CODE END USART2_IRQn 1 */
+}
+
+/* USER CODE BEGIN 1 */
+// UART receive complete callback
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart) {
+    // Store the received byte in the buffer
+    if (rx_index < sizeof(rx_buffer) - 1) { // Prevent buffer overflow
+        rx_buffer[rx_index++] = rx_data;
+
+        // Check for the 'ee' delimiter
+        if (rx_index >= 2 && rx_buffer[rx_index-2] == 'e' && rx_buffer[rx_index-1] == 'e') {
+            rx_complete = 1; // Set flag to indicate complete message
+            return; // Stop receiving until processed
+        }
+    }
+
+    // Restart reception for the next byte
+    HAL_UART_Receive_IT(huart, &rx_data, 1);
+}
 /* USER CODE END 1 */

@@ -31,6 +31,7 @@
 /* USER CODE BEGIN Includes */
 #include <string.h>
 #include <stdio.h>
+#include "uart_utils.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -80,6 +81,13 @@ static void MX_TIM7_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+
+// Global variables for UART reception
+uint8_t rx_buffer[256]; // Buffer to store incoming data (adjust size as needed)
+uint16_t rx_index = 0;  // Current index in the buffer
+uint8_t rx_data;        // Single byte for interrupt reception
+volatile uint8_t rx_complete = 0; // Flag to indicate complete message
+
 uint8_t state=0;				//State of the state machine
 
 uint8_t i;
@@ -135,15 +143,43 @@ uint8_t length;				//length of the message read
 
 UART_HandleTypeDef huart1; // UART1 handler
 
-uint16_t readLine(UART_HandleTypeDef *huart, uint8_t *data, uint16_t max_len, uint16_t timeout) {
-	uint16_t count = 0;
-	while (HAL_UART_Receive(huart, &data[count], 1, timeout) == HAL_OK && count < max_len) {
-		count++;
-		if (data[count+1] == 'e' && data[count+2]== 'e')
-			break;
-	}
-	return count;
+// Initialize UART interrupt reception
+void startUartReceive(UART_HandleTypeDef *huart) {
+    // Start UART reception in interrupt mode for 1 byte
+    HAL_UART_Receive_IT(huart, &rx_data, 1);
 }
+// Non-blocking function to read UART data
+uint16_t readLine(UART_HandleTypeDef *huart, uint8_t *data, uint16_t max_len) {
+    uint16_t count = 0;
+
+    // Check if a complete message is ready
+    if (rx_complete) {
+        // Copy data from rx_buffer to user-provided data buffer
+        for (count = 0; count < rx_index && count < max_len; count++) {
+            data[count] = rx_buffer[count];
+        }
+
+        // Reset buffer and flags
+        rx_index = 0;
+        rx_complete = 0;
+
+        // Restart UART reception
+        HAL_UART_Receive_IT(huart, &rx_data, 1);
+    }
+
+    return count;
+}
+
+
+//uint16_t readLine(UART_HandleTypeDef *huart, uint8_t *data, uint16_t max_len, uint16_t timeout) {
+//	uint16_t count = 0;
+//	while (HAL_UART_Receive(huart, &data[count], 1, timeout) == HAL_OK && count < max_len) {
+//		count++;
+//		if (data[count+1] == 'e' && data[count+2]== 'e')
+//			break;
+//	}
+//	return count;
+//}
 
 uint8_t light;
 uint8_t camera;
@@ -195,7 +231,7 @@ int main(void)
   MX_TIM16_Init();
   MX_TIM7_Init();
   /* USER CODE BEGIN 2 */
-
+  startUartReceive(&huart2);	// Initialising the uart receive interrupt callback
   //START PWM OUTPUTS:
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);		//Motor 1
   HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);		//Motor 2
@@ -237,7 +273,7 @@ int main(void)
 		case 0:
 			memset(message,0,34);		//Clean the array before writing on it
 			//Receive message: check Id and length
-			length=readLine(&huart2, message, sizeof(message), 100);
+			length=readLine(&huart2, message, sizeof(message));
 
 			//Cameras & lights:
 			if(length==16 && message[0]=='c' && message[1]=='c') {
@@ -948,12 +984,21 @@ static void MX_USART2_UART_Init(void)
   */
 static void MX_GPIO_Init(void)
 {
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
 /* USER CODE BEGIN MX_GPIO_Init_1 */
 /* USER CODE END MX_GPIO_Init_1 */
 
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
+
+  /*Configure GPIO pins : PA9 PA10 */
+  GPIO_InitStruct.Pin = GPIO_PIN_9|GPIO_PIN_10;
+  GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  GPIO_InitStruct.Alternate = GPIO_AF7_USART1;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */
